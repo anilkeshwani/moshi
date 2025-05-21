@@ -1,5 +1,35 @@
 # Moshi: a speech-text foundation model for real time dialogue
 
+## Installation
+
+```bash
+conda create -n moshi python=3.10.6 &&
+    conda activate moshi &&
+    pip3 install torch torchvision torchaudio &&
+    pip install moshi==0.2.4
+```
+
+Installation does not reference the local version. We also install PyTorch eagerly ourselves with the following versions:
+
+```
+torch==2.6.0
+torchaudio==2.7.0
+torchvision==0.22.0
+```
+
+Can also install from the local repository when in the _moshi/_ subdirectory:
+
+```bash
+conda create -n moshi python=3.10.6 &&
+    conda activate moshi &&
+    pip3 install torch torchvision torchaudio &&
+    pip install .
+```
+
+---
+
+# Moshi: a speech-text foundation model for real time dialogue
+
 ![precommit badge](https://github.com/kyutai-labs/moshi/workflows/precommit/badge.svg)
 ![rust ci badge](https://github.com/kyutai-labs/moshi/workflows/Rust%20CI/badge.svg)
 
