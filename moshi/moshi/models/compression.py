@@ -13,25 +13,19 @@
 for Mimi. Also defines the main interface that a model must follow to be usable as an audio tokenizer.
 """
 
+import logging
+import typing as tp
 from abc import abstractmethod
 from contextlib import nullcontext
 from dataclasses import dataclass
-import logging
-import typing as tp
 
 import torch
 from torch import nn
 
-
-from ..quantization import (
-    QuantizedResult,
-    BaseQuantizer,
-    SplitResidualVectorQuantizer,
-    ResidualVectorQuantizer,
-)
 from ..modules.resample import ConvDownsample1d, ConvTrUpsample1d
-from ..modules.streaming import StreamingModule, State, StateT
-from ..utils.compile import no_compile, CUDAGraphed
+from ..modules.streaming import State, StateT, StreamingModule
+from ..quantization import BaseQuantizer, QuantizedResult, ResidualVectorQuantizer, SplitResidualVectorQuantizer
+from ..utils.compile import CUDAGraphed, no_compile
 
 
 logger = logging.getLogger()
@@ -167,17 +161,13 @@ class MimiModel(CompressionModel[_MimiState]):
             self.quantizer.ema_frozen_(True)
         self.freeze_quantizer = freeze_quantizer
         self.freeze_quantizer_level = (
-            freeze_quantizer_level
-            if freeze_quantizer_level > 0
-            else self.quantizer.num_codebooks
+            freeze_quantizer_level if freeze_quantizer_level > 0 else self.quantizer.num_codebooks
         )
 
         # We will need the dimension for the resampling. In general the encoder will be a SeanetEncoder
         # which exposes a `dimension` attribute.
         dimension = encoder.dimension
-        assert isinstance(
-            dimension, int
-        ), f"Dimension should be int, got {dimension} of type {type(dimension)}."
+        assert isinstance(dimension, int), f"Dimension should be int, got {dimension} of type {type(dimension)}."
         self.dimension = dimension
 
         assert resample_method in [
@@ -187,13 +177,9 @@ class MimiModel(CompressionModel[_MimiState]):
         ], f"Invalid resample_method {resample_method}"
         self.resample_method = resample_method
         if encoder_frame_rate != frame_rate:
-            assert not (
-                causal and resample_method == "interpolate"
-            ), "Cannot interpolate with causal model."
+            assert not (causal and resample_method == "interpolate"), "Cannot interpolate with causal model."
             if resample_method in ["conv", "avg_pool"]:
-                assert (
-                    self.encoder_frame_rate > self.frame_rate
-                ), "Cannot upsample with conv."
+                assert self.encoder_frame_rate > self.frame_rate, "Cannot upsample with conv."
                 downsample_stride = self.encoder_frame_rate / self.frame_rate
                 assert downsample_stride == int(
                     downsample_stride
@@ -218,7 +204,7 @@ class MimiModel(CompressionModel[_MimiState]):
 
     def _init_streaming_state(self, batch_size: int) -> _MimiState:
         device = next(self.parameters()).device
-        disable = device.type != 'cuda'
+        disable = device.type != "cuda"
         graphed_tr_dec = None
         graphed_tr_enc = None
         if self.encoder_transformer is not None:
@@ -299,9 +285,7 @@ class MimiModel(CompressionModel[_MimiState]):
         if self.freeze_quantizer:
             if isinstance(self.quantizer, SplitResidualVectorQuantizer):
                 self.quantizer.rvq_first.eval()
-                for i in range(
-                    self.freeze_quantizer_level - self.quantizer.n_q_semantic
-                ):
+                for i in range(self.freeze_quantizer_level - self.quantizer.n_q_semantic):
                     self.quantizer.rvq_rest.vq.layers[i].eval()
             elif isinstance(self.quantizer, ResidualVectorQuantizer):
                 for i in range(self.freeze_quantizer_level):

@@ -3,22 +3,21 @@
 # LICENSE file in the root directory of this source tree.
 
 import argparse
-from collections import deque
-from dataclasses import dataclass
-from pathlib import Path
 import random
 import sys
 import time
+from collections import deque
+from dataclasses import dataclass
+from pathlib import Path
 
 import numpy as np
 import sentencepiece
-import torch
 import sphn
+import torch
 
-
-from .client_utils import log, AnyPrinter, Printer, RawPrinter
+from .client_utils import AnyPrinter, log, Printer, RawPrinter
 from .conditioners import ConditionAttributes, ConditionTensors
-from .models import loaders, MimiModel, LMModel, LMGen
+from .models import LMGen, LMModel, loaders, MimiModel
 
 
 def seed_all(seed):
@@ -36,9 +35,9 @@ def get_condition_tensors(model_type: str, lm: LMModel, batch_size: int, cfg_coe
     condition_tensors = {}
     if lm.condition_provider is not None:
         conditions: list[ConditionAttributes] | None = None
-        if model_type == 'hibiki':
+        if model_type == "hibiki":
             conditions = [ConditionAttributes(text={"description": "very_good"}, wav={})] * batch_size
-            if cfg_coef != 1.:
+            if cfg_coef != 1.0:
                 # Extending the conditions with the negatives for the CFG.
                 conditions += [ConditionAttributes(text={"description": "very_bad"}, wav={})] * batch_size
         else:
@@ -55,8 +54,17 @@ class InferenceState:
     text_tokenizer: sentencepiece.SentencePieceProcessor
     lm_gen: LMGen
 
-    def __init__(self, model_type: str, mimi: MimiModel, text_tokenizer: sentencepiece.SentencePieceProcessor,
-                 lm: LMModel, batch_size: int, cfg_coef: float, device: str | torch.device, **kwargs):
+    def __init__(
+        self,
+        model_type: str,
+        mimi: MimiModel,
+        text_tokenizer: sentencepiece.SentencePieceProcessor,
+        lm: LMModel,
+        batch_size: int,
+        cfg_coef: float,
+        device: str | torch.device,
+        **kwargs,
+    ):
         self.model_type = model_type
         self.mimi = mimi
         self.text_tokenizer = text_tokenizer
@@ -88,24 +96,22 @@ class InferenceState:
         ntokens = 0
         first_frame = True
         # We keep only fully frames.
-        chunks = deque([
-            chunk for chunk in in_pcms.split(self.frame_size, dim=2)
-            if chunk.shape[-1] == self.frame_size])
+        chunks = deque([chunk for chunk in in_pcms.split(self.frame_size, dim=2) if chunk.shape[-1] == self.frame_size])
         self.printer.print_header()
         while not all(eos_reached):
             if chunks:
                 chunk = chunks.popleft()
                 codes = self.mimi.encode(chunk)
             else:
-                if self.model_type == 'hibiki':
+                if self.model_type == "hibiki":
                     if need_eos_input:
                         # First frame after the end of the file, we feed a code full of 2048
                         # to indicate the end of stream.
                         need_eos_input = False
                         eos_value = self.mimi.cardinality
                         codes = torch.full(
-                            (self.batch_size, self.mimi.num_codebooks, 1),
-                            eos_value, device=device, dtype=torch.long)
+                            (self.batch_size, self.mimi.num_codebooks, 1), eos_value, device=device, dtype=torch.long
+                        )
                     else:
                         silence = torch.zeros((self.batch_size, self.mimi.channels, self.frame_size), device=device)
                         codes = self.mimi.encode(silence)
@@ -155,15 +161,24 @@ def main():
     parser.add_argument("--tokenizer", type=str, help="Path to a local tokenizer file.")
     parser.add_argument("--moshi-weight", type=str, help="Path to a local checkpoint file for Moshi.")
     parser.add_argument("--mimi-weight", type=str, help="Path to a local checkpoint file for Mimi.")
-    parser.add_argument("--hf-repo", type=str, default=loaders.DEFAULT_REPO,
-                        help="HF repo to look into, defaults Moshiko. "
-                             "Use this to select a different pre-trained model.")
+    parser.add_argument(
+        "--hf-repo",
+        type=str,
+        default=loaders.DEFAULT_REPO,
+        help="HF repo to look into, defaults Moshiko. " "Use this to select a different pre-trained model.",
+    )
     parser.add_argument("--batch-size", type=int, default=8, help="Batch size to be used for inference.")
     parser.add_argument("--device", type=str, default="cuda", help="Device on which to run, defaults to 'cuda'.")
-    parser.add_argument("--half", action="store_const", const=torch.float16, default=torch.bfloat16,
-                        dest="dtype", help="Run inference with float16, not bfloat16, better for old GPUs.")
+    parser.add_argument(
+        "--half",
+        action="store_const",
+        const=torch.float16,
+        default=torch.bfloat16,
+        dest="dtype",
+        help="Run inference with float16, not bfloat16, better for old GPUs.",
+    )
     parser.add_argument("--config", "--lm-config", dest="config", type=str, help="The config as a json file.")
-    parser.add_argument("--cfg-coef", type=float, default=1., help="CFG coefficient.")
+    parser.add_argument("--cfg-coef", type=float, default=1.0, help="CFG coefficient.")
     parser.add_argument("infile", type=str, help="Input audio file.")
     parser.add_argument("outfile", type=str, help="Output audio file in wav format.", nargs="?", default="")
 
@@ -172,7 +187,8 @@ def main():
 
     log("info", "retrieving checkpoint")
     checkpoint_info = loaders.CheckpointInfo.from_hf_repo(
-        args.hf_repo, args.moshi_weight, args.mimi_weight, args.tokenizer, args.config)
+        args.hf_repo, args.moshi_weight, args.mimi_weight, args.tokenizer, args.config
+    )
     log("info", "loading mimi")
     mimi = checkpoint_info.get_mimi(device=args.device)
     log("info", "mimi loaded")
@@ -187,8 +203,15 @@ def main():
     in_pcms = in_pcms[None, 0:1].expand(args.batch_size, -1, -1)
 
     state = InferenceState(
-        checkpoint_info.model_type, mimi, text_tokenizer, lm,
-        args.batch_size, args.cfg_coef, args.device, **checkpoint_info.lm_gen_config)
+        checkpoint_info.model_type,
+        mimi,
+        text_tokenizer,
+        lm,
+        args.batch_size,
+        args.cfg_coef,
+        args.device,
+        **checkpoint_info.lm_gen_config,
+    )
     out_items = state.run(in_pcms)
 
     if args.outfile:
